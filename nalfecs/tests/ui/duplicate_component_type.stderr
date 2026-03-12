@@ -1,0 +1,10 @@
+error[E0119]: conflicting implementations of trait `__NalfecsUniqueComponentType<Transform>` for type `__NalfecsUniqueComponentTypeChecker`
+ --> tests/ui/duplicate_component_type.rs:6:1
+  |
+6 | #[nalfecs::object(container_name = "DuplicateComponentContainer")]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  | |
+  | first implementation here
+  | conflicting implementation for `__NalfecsUniqueComponentTypeChecker`
+  |
+  = note: this error originates in the attribute macro `nalfecs::object` (in Nightly builds, run with -Z macro-backtrace for more info)

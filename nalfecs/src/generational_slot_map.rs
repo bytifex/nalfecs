@@ -1,0 +1,558 @@
+use std::cmp::Reverse;
+use std::collections::BinaryHeap;
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
+pub struct GenerationalSlotMapIndex {
+    index: usize,
+    version: isize,
+}
+
+impl GenerationalSlotMapIndex {
+    pub fn invalid() -> Self {
+        Self {
+            index: 0,
+            version: -1,
+        }
+    }
+
+    pub fn invalidate(&mut self) -> Self {
+        let mut id = Self::invalid();
+        std::mem::swap(&mut id, self);
+
+        id
+    }
+}
+
+struct ObjectWrapper<T> {
+    version: isize,
+    object: Option<T>,
+}
+
+pub struct GenerationalSlotMap<T> {
+    objects: Vec<ObjectWrapper<T>>,
+    free_slots: BinaryHeap<Reverse<usize>>,
+    number_of_items: usize,
+}
+
+impl<T> Default for GenerationalSlotMap<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T> GenerationalSlotMap<T> {
+    pub fn new() -> Self {
+        GenerationalSlotMap {
+            objects: Vec::new(),
+            free_slots: BinaryHeap::new(),
+            number_of_items: 0,
+        }
+    }
+
+    pub fn with_capacity(capacity: usize) -> Self {
+        GenerationalSlotMap {
+            objects: Vec::with_capacity(capacity),
+            free_slots: BinaryHeap::with_capacity(capacity),
+            number_of_items: 0,
+        }
+    }
+
+    pub fn create_object(&mut self, value: T) -> GenerationalSlotMapIndex {
+        match self.free_slots.pop() {
+            Some(Reverse(index)) => {
+                let obj = &mut self.objects[index];
+                obj.object = Some(value);
+                obj.version += 1;
+
+                self.number_of_items += 1;
+
+                GenerationalSlotMapIndex {
+                    index,
+                    version: obj.version,
+                }
+            }
+            None => {
+                let index = self.objects.len();
+                let version = 1;
+
+                self.objects.push(ObjectWrapper {
+                    version,
+                    object: Some(value),
+                });
+
+                self.number_of_items += 1;
+
+                GenerationalSlotMapIndex { index, version }
+            }
+        }
+    }
+
+    pub fn create_object_with_fn<ErrorType>(
+        &mut self,
+        f: impl FnOnce(GenerationalSlotMapIndex) -> Result<T, ErrorType>,
+    ) -> Result<(GenerationalSlotMapIndex, &T), ErrorType> {
+        // pop should be issued after the call to f because it may panic!
+        let (index, slot_map_index) = match self.free_slots.peek() {
+            Some(Reverse(index)) => {
+                let index = *index;
+                let obj = &mut self.objects[index];
+
+                let slot_map_index = GenerationalSlotMapIndex {
+                    index,
+                    version: obj.version + 1,
+                };
+
+                // call to f may panic! therefore using pop is
+                obj.object = Some(f(slot_map_index)?);
+                obj.version += 1;
+                self.free_slots.pop();
+                self.number_of_items += 1;
+
+                (index, slot_map_index)
+            }
+            None => {
+                let index = self.objects.len();
+                let version = 1;
+
+                let slot_map_index = GenerationalSlotMapIndex { index, version };
+
+                self.objects.push(ObjectWrapper {
+                    version,
+                    object: Some(f(slot_map_index)?),
+                });
+
+                self.number_of_items += 1;
+
+                (index, slot_map_index)
+            }
+        };
+
+        Ok((
+            slot_map_index,
+            self.objects[index]
+                .object
+                .as_ref()
+                .expect("object should have been created in this method"),
+        ))
+    }
+
+    pub fn release_object(&mut self, index: GenerationalSlotMapIndex) -> Option<T> {
+        if index.index < self.objects.len() {
+            let obj = &mut self.objects[index.index];
+            if obj.version == index.version {
+                obj.version += 1;
+                self.free_slots.push(Reverse(index.index));
+
+                self.number_of_items -= 1;
+
+                let mut object_opt = None;
+                std::mem::swap(&mut object_opt, &mut obj.object);
+
+                object_opt
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
+    pub fn get_ref(&self, index: GenerationalSlotMapIndex) -> Option<&T> {
+        if index.index < self.objects.len() {
+            let obj = &self.objects[index.index];
+            if obj.version == index.version {
+                return obj.object.as_ref();
+            }
+        }
+
+        None
+    }
+
+    pub fn get_mut(&mut self, index: GenerationalSlotMapIndex) -> Option<&mut T> {
+        if index.index < self.objects.len() {
+            let obj = &mut self.objects[index.index];
+            if obj.version == index.version {
+                return obj.object.as_mut();
+            }
+        }
+
+        None
+    }
+
+    pub fn iter(&self) -> GenerationalSlotMapIter<'_, T> {
+        GenerationalSlotMapIter {
+            inner_iterator: self.objects.iter().enumerate(),
+        }
+    }
+
+    pub fn iter_mut(&mut self) -> GenerationalSlotMapIterMut<'_, T> {
+        GenerationalSlotMapIterMut {
+            inner_iterator: self.objects.iter_mut().enumerate(),
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.number_of_items
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.number_of_items == 0
+    }
+
+    pub fn find_first(&self, pred: impl Fn(&T) -> bool) -> Option<GenerationalSlotMapIndex> {
+        self.objects
+            .iter()
+            .position(|object_wrapper| {
+                if let Some(object) = object_wrapper.object.as_ref() {
+                    pred(object)
+                } else {
+                    false
+                }
+            })
+            .map(|index| GenerationalSlotMapIndex {
+                index,
+                version: self.objects[index].version,
+            })
+    }
+}
+
+pub struct GenerationalSlotMapIter<'a, T> {
+    inner_iterator: std::iter::Enumerate<std::slice::Iter<'a, ObjectWrapper<T>>>,
+}
+
+impl<'a, T> Iterator for GenerationalSlotMapIter<'a, T> {
+    type Item = (GenerationalSlotMapIndex, &'a T);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        for (index, object_wrapper) in self.inner_iterator.by_ref() {
+            let object = object_wrapper.object.as_ref();
+            match object {
+                Some(object) => {
+                    return Some((
+                        GenerationalSlotMapIndex {
+                            index,
+                            version: object_wrapper.version,
+                        },
+                        object,
+                    ));
+                }
+                None => continue,
+            }
+        }
+
+        None
+    }
+}
+
+pub struct GenerationalSlotMapIterMut<'a, T> {
+    inner_iterator: std::iter::Enumerate<std::slice::IterMut<'a, ObjectWrapper<T>>>,
+}
+
+impl<'a, T> Iterator for GenerationalSlotMapIterMut<'a, T> {
+    type Item = (GenerationalSlotMapIndex, &'a mut T);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        for (index, object_wrapper) in self.inner_iterator.by_ref() {
+            let object = object_wrapper.object.as_mut();
+            match object {
+                Some(object) => {
+                    return Some((
+                        GenerationalSlotMapIndex {
+                            index,
+                            version: object_wrapper.version,
+                        },
+                        object,
+                    ));
+                }
+                None => continue,
+            }
+        }
+
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::infallible::UnwrapInfallible;
+
+    use super::*;
+
+    #[test]
+    fn create_release_create() {
+        let mut slot_map = GenerationalSlotMap::<String>::new();
+
+        let index0 = slot_map.create_object("item0".to_string());
+        let index1 = slot_map.create_object("item1".to_string());
+        let index2 = slot_map.create_object("item2".to_string());
+        let index3 = slot_map
+            .create_object_with_fn(|_index| Ok("item3".to_string()))
+            .infallible()
+            .0;
+        let index4 = slot_map
+            .create_object_with_fn(|_index| Ok("item4".to_string()))
+            .infallible()
+            .0;
+
+        assert_eq!(
+            index0,
+            GenerationalSlotMapIndex {
+                index: 0,
+                version: 1
+            }
+        );
+        assert_eq!(
+            index1,
+            GenerationalSlotMapIndex {
+                index: 1,
+                version: 1
+            }
+        );
+        assert_eq!(
+            index2,
+            GenerationalSlotMapIndex {
+                index: 2,
+                version: 1
+            }
+        );
+        assert_eq!(
+            index3,
+            GenerationalSlotMapIndex {
+                index: 3,
+                version: 1
+            }
+        );
+        assert_eq!(
+            index4,
+            GenerationalSlotMapIndex {
+                index: 4,
+                version: 1
+            }
+        );
+
+        assert_eq!(slot_map.get_ref(index0).cloned(), Some("item0".to_string()));
+        assert_eq!(slot_map.get_ref(index1).cloned(), Some("item1".to_string()));
+        assert_eq!(slot_map.get_ref(index2).cloned(), Some("item2".to_string()));
+        assert_eq!(slot_map.get_ref(index3).cloned(), Some("item3".to_string()));
+        assert_eq!(slot_map.get_ref(index4).cloned(), Some("item4".to_string()));
+
+        assert_eq!(slot_map.release_object(index2), Some("item2".to_string()));
+        assert_eq!(slot_map.release_object(index1), Some("item1".to_string()));
+        assert_eq!(slot_map.release_object(index4), Some("item4".to_string()));
+
+        let index5 = slot_map.create_object("item5".to_string());
+        assert_eq!(
+            index5,
+            GenerationalSlotMapIndex {
+                index: 1,
+                version: 3
+            }
+        );
+        assert_eq!(slot_map.get_ref(index5).cloned(), Some("item5".to_string()));
+    }
+
+    #[test]
+    fn accessing_released_object() {
+        let mut slot_map = GenerationalSlotMap::<String>::new();
+
+        let _index0 = slot_map.create_object("item0".to_string());
+        let index1 = slot_map.create_object("item1".to_string());
+        let index2 = slot_map.create_object("item2".to_string());
+        let _index3 = slot_map
+            .create_object_with_fn(|_index| Ok("item3".to_string()))
+            .infallible()
+            .0;
+        let index4 = slot_map
+            .create_object_with_fn(|_index| Ok("item4".to_string()))
+            .infallible()
+            .0;
+
+        assert_eq!(slot_map.len(), 5);
+
+        assert_eq!(slot_map.release_object(index2), Some("item2".to_string()));
+        assert_eq!(slot_map.release_object(index1), Some("item1".to_string()));
+        assert_eq!(slot_map.release_object(index4), Some("item4".to_string()));
+
+        assert_eq!(slot_map.len(), 2);
+
+        assert_eq!(slot_map.get_ref(index1), None);
+        assert_eq!(slot_map.get_ref(index2), None);
+        assert_eq!(slot_map.get_ref(index4), None);
+
+        assert_eq!(slot_map.get_mut(index1), None);
+        assert_eq!(slot_map.get_mut(index2), None);
+        assert_eq!(slot_map.get_mut(index4), None);
+    }
+
+    #[test]
+    fn releasing_invalid_index() {
+        let mut slot_map = GenerationalSlotMap::<String>::new();
+
+        let _index0 = slot_map.create_object("item0".to_string());
+        let _index1 = slot_map.create_object("item1".to_string());
+        let index2 = slot_map.create_object("item2".to_string());
+        let _index3 = slot_map
+            .create_object_with_fn(|_index| Ok("item3".to_string()))
+            .infallible()
+            .0;
+        let _index4 = slot_map
+            .create_object_with_fn(|_index| Ok("item4".to_string()))
+            .infallible()
+            .0;
+
+        assert_eq!(slot_map.release_object(index2), Some("item2".to_string()));
+        assert!(slot_map.release_object(index2).is_none());
+    }
+
+    #[test]
+    fn iterate_ref_on_empty() {
+        let slot_map = GenerationalSlotMap::<String>::new();
+        let mut counter = 0;
+        for _ in slot_map.iter() {
+            counter += 1;
+        }
+        assert_eq!(counter, 0);
+    }
+
+    #[test]
+    fn iterate_mut_on_empty() {
+        let mut slot_map = GenerationalSlotMap::<String>::new();
+        let mut counter = 0;
+        for _ in slot_map.iter_mut() {
+            counter += 1;
+        }
+        assert_eq!(counter, 0);
+    }
+
+    #[test]
+    fn iterate_ref() {
+        let mut slot_map = GenerationalSlotMap::<String>::new();
+
+        let _index0 = slot_map.create_object("item0".to_string());
+        let index1 = slot_map.create_object("item1".to_string());
+        let _index2 = slot_map.create_object("item2".to_string());
+        let index3 = slot_map
+            .create_object_with_fn(|_index| Ok("item3".to_string()))
+            .infallible()
+            .0;
+        let index4 = slot_map
+            .create_object_with_fn(|_index| Ok("item4".to_string()))
+            .infallible()
+            .0;
+
+        {
+            let mut counter = 0;
+            for (_index, item) in slot_map.iter() {
+                match counter {
+                    0 => assert_eq!(item, "item0"),
+                    1 => assert_eq!(item, "item1"),
+                    2 => assert_eq!(item, "item2"),
+                    3 => assert_eq!(item, "item3"),
+                    4 => assert_eq!(item, "item4"),
+                    _ => (),
+                };
+
+                counter += 1;
+            }
+            assert_eq!(counter, 5);
+        }
+
+        assert_eq!(slot_map.release_object(index1), Some("item1".to_string()));
+        assert_eq!(slot_map.release_object(index3), Some("item3".to_string()));
+        assert_eq!(slot_map.release_object(index4), Some("item4".to_string()));
+
+        {
+            let mut counter = 0;
+            for (_index, item) in slot_map.iter() {
+                match counter {
+                    0 => assert_eq!(item, "item0"),
+                    1 => assert_eq!(item, "item2"),
+                    _ => (),
+                };
+
+                counter += 1;
+            }
+            assert_eq!(counter, 2);
+        }
+    }
+
+    #[test]
+    fn iterate_mut() {
+        let mut slot_map = GenerationalSlotMap::<String>::new();
+
+        let index0 = slot_map.create_object("item0".to_string());
+        let index1 = slot_map.create_object("item1".to_string());
+        let index2 = slot_map.create_object("item2".to_string());
+        let index3 = slot_map
+            .create_object_with_fn(|_index| Ok("item3".to_string()))
+            .infallible()
+            .0;
+        let index4 = slot_map
+            .create_object_with_fn(|_index| Ok("item4".to_string()))
+            .infallible()
+            .0;
+
+        {
+            let mut counter = 0;
+            for (_index, item) in slot_map.iter_mut() {
+                match counter {
+                    0 => assert_eq!(item, "item0"),
+                    1 => assert_eq!(item, "item1"),
+                    2 => assert_eq!(item, "item2"),
+                    3 => assert_eq!(item, "item3"),
+                    4 => assert_eq!(item, "item4"),
+                    _ => (),
+                };
+
+                counter += 1;
+            }
+            assert_eq!(counter, 5);
+        }
+
+        assert_eq!(slot_map.release_object(index1), Some("item1".to_string()));
+        assert_eq!(slot_map.release_object(index3), Some("item3".to_string()));
+        assert_eq!(slot_map.release_object(index4), Some("item4".to_string()));
+
+        {
+            let mut counter = 0;
+            for (_index, item) in slot_map.iter_mut() {
+                match counter {
+                    0 => assert_eq!(item, "item0"),
+                    1 => assert_eq!(item, "item2"),
+                    _ => (),
+                };
+
+                *item = "new value".to_string();
+
+                counter += 1;
+            }
+            assert_eq!(counter, 2);
+        }
+
+        assert_eq!(
+            slot_map.get_ref(index0).cloned(),
+            Some("new value".to_string())
+        );
+        assert_eq!(
+            slot_map.get_ref(index2).cloned(),
+            Some("new value".to_string())
+        );
+    }
+
+    #[test]
+    fn find_first() {
+        let mut slot_map = GenerationalSlotMap::<String>::new();
+
+        let index0 = slot_map.create_object("item0".to_string());
+        let index1 = slot_map.create_object("item1".to_string());
+        let _index2 = slot_map.create_object("item1".to_string());
+        let index3 = slot_map.create_object("item2".to_string());
+        let _index4 = slot_map.create_object("item2".to_string());
+        let _index5 = slot_map.create_object("item2".to_string());
+
+        assert_eq!(slot_map.find_first(|item| item == "item0"), Some(index0));
+        assert_eq!(slot_map.find_first(|item| item == "item1"), Some(index1));
+        assert_eq!(slot_map.find_first(|item| item == "item2"), Some(index3));
+        assert_eq!(slot_map.find_first(|item| item == "item3"), None);
+    }
+}
