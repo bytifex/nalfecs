@@ -10,7 +10,7 @@ version = "0.1.0"
 edition = "2024"
 
 [workspace.dependencies]
-quote = "1.0.44"
-proc-macro2 = "1.0.106"
-syn = "2.0.117"
+quote = "1.0.47"
+proc-macro2 = "1.0.107"
+syn = "3.0.2"
 parking_lot = "0.12.5"
