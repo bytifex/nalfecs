@@ -7,12 +7,12 @@ use crate::{
 
 #[derive(Clone)]
 pub struct Container {
-    object_containers: Arc<GenerationalSlotMap<Arc<dyn ObjectContainer>>>,
+    object_containers: Arc<GenerationalSlotMap<Box<dyn ObjectContainer>>>,
     object_container_indices_by_type: Arc<HashMap<TypeId, ObjectContainerIndex>>,
 }
 
 impl Container {
-    pub fn new(containers: impl IntoIterator<Item = Arc<dyn ObjectContainer>>) -> Self {
+    pub fn new(containers: impl IntoIterator<Item = Box<dyn ObjectContainer>>) -> Self {
         let mut object_containers = GenerationalSlotMap::default();
         let mut object_container_indices_by_type = HashMap::new();
 

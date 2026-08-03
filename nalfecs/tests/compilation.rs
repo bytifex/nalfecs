@@ -3,7 +3,7 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
 };
 
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 
 enum ComponentToModify {
     RigidBody,
@@ -42,7 +42,7 @@ fn compilation() {
     }
 
     let container = nalfecs::Container::new([
-        Arc::new(rigid_box_container) as Arc<dyn nalfecs::ObjectContainer>
+        Box::new(rigid_box_container) as Box<dyn nalfecs::ObjectContainer>
     ]);
 
     let view_desc = container.view_descriptor(&[
@@ -126,7 +126,7 @@ fn add_remove_through_container() {
     }
 
     let container = nalfecs::Container::new([
-        Arc::new(RigidBoxContainer::new()) as Arc<dyn nalfecs::ObjectContainer>
+        Box::new(RigidBoxContainer::new()) as Box<dyn nalfecs::ObjectContainer>
     ]);
 
     let index = container
@@ -176,8 +176,8 @@ async fn parallel_add_remove_through_container() {
     const MARKER_TWO: &str = "|m2|";
 
     let container = Arc::new(nalfecs::Container::new([
-        Arc::new(RigidBoxContainer::new()) as Arc<dyn nalfecs::ObjectContainer>,
-        Arc::new(RigidSphereContainer::new()) as Arc<dyn nalfecs::ObjectContainer>,
+        Box::new(RigidBoxContainer::new()) as Box<dyn nalfecs::ObjectContainer>,
+        Box::new(RigidSphereContainer::new()) as Box<dyn nalfecs::ObjectContainer>,
     ]));
 
     let rigid_box_indices = Arc::new(Mutex::new(Vec::with_capacity(TOTAL_ITEMS_PER_TYPE)));
@@ -190,7 +190,8 @@ async fn parallel_add_remove_through_container() {
             let rigid_sphere_indices = Arc::clone(&rigid_sphere_indices);
 
             tokio::spawn(async move {
-                let mut rng = rand::rngs::SmallRng::from_entropy();
+                // Seed deterministically per task to avoid relying on OS entropy APIs.
+                let mut rng = rand::rngs::SmallRng::seed_from_u64(task_id as u64 + 1);
 
                 for item_id in 0..ITEMS_PER_TASK {
                     let add_box = || {
@@ -226,7 +227,7 @@ async fn parallel_add_remove_through_container() {
                             .expect("expected matching object container")
                     };
 
-                    let (rigid_box_index, rigid_sphere_index) = if rng.gen_bool(0.5) {
+                    let (rigid_box_index, rigid_sphere_index) = if rng.random_bool(0.5) {
                         let rigid_box_index = add_box();
                         let rigid_sphere_index = add_sphere();
                         (rigid_box_index, rigid_sphere_index)
@@ -424,7 +425,7 @@ fn single_component_immutable_iteration() {
     }
 
     let container = nalfecs::Container::new([
-        Arc::new(rigid_box_container) as Arc<dyn nalfecs::ObjectContainer>
+        Box::new(rigid_box_container) as Box<dyn nalfecs::ObjectContainer>
     ]);
 
     // Use component_iter to iterate over just Transform components
@@ -455,7 +456,7 @@ fn single_component_mutable_iteration() {
     }
 
     let container = nalfecs::Container::new([
-        Arc::new(rigid_box_container) as Arc<dyn nalfecs::ObjectContainer>
+        Box::new(rigid_box_container) as Box<dyn nalfecs::ObjectContainer>
     ]);
 
     // Use component_iter_mut to iterate over mutable RigidBody components
@@ -491,7 +492,7 @@ fn iterating_component_set_exposes_object_index() {
     }
 
     let container = nalfecs::Container::new([
-        Arc::new(rigid_box_container) as Arc<dyn nalfecs::ObjectContainer>
+        Box::new(rigid_box_container) as Box<dyn nalfecs::ObjectContainer>
     ]);
 
     let view_desc = container.view_descriptor(&[
@@ -525,3 +526,13 @@ fn iterating_component_set_exposes_object_index() {
 
     assert_eq!(removed, ITEM_COUNT);
 }
+
+// todo!()
+// #[tokio::test(flavor = "multi_thread")]
+// async fn non_send_non_sync() {
+//     #[allow(dead_code)]
+//     #[nalfecs::object(container_name = "ObjectContainer")]
+//     struct Object {
+//         component: std::rc::Rc<()>,
+//     }
+// }
