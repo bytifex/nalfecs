@@ -51,7 +51,7 @@ fn compilation() {
         nalfecs::ComponentAccess::mutable::<component::Appearance>(),
     ]);
 
-    let iter = nalfecs::container_iter_map!(
+    let iter = nalfecs::container_iter!(
         <component::Transform, mut component::RigidBody, mut component::Appearance>,
         container,
         &view_desc,
@@ -358,7 +358,7 @@ async fn modify_some_components(
                 nalfecs::ComponentAccess::mutable::<component::RigidBody>(),
             ]);
 
-            let iter = nalfecs::container_iter_map!(
+            let iter = nalfecs::container_iter!(
                 <component::Transform, mut component::RigidBody>,
                 container,
                 &view_desc,
@@ -378,7 +378,7 @@ async fn modify_some_components(
                 nalfecs::ComponentAccess::mutable::<component::Appearance>(),
             ]);
 
-            let iter = nalfecs::container_iter_map!(
+            let iter = nalfecs::container_iter!(
                 <component::Transform, mut component::Appearance>,
                 container,
                 &view_desc,
@@ -500,7 +500,7 @@ fn iterating_component_set_exposes_object_index() {
         nalfecs::ComponentAccess::mutable::<component::RigidBody>(),
     ]);
 
-    let iter = nalfecs::container_iter_map!(
+    let iter = nalfecs::container_iter!(
         <component::Transform, mut component::RigidBody>,
         container,
         &view_desc,

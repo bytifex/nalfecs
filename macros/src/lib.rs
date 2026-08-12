@@ -1,4 +1,4 @@
-mod container_iter_map;
+mod container_iter;
 mod object;
 
 use proc_macro::TokenStream;
@@ -63,13 +63,13 @@ pub fn object(arg: TokenStream, input: TokenStream) -> TokenStream {
 }
 
 #[proc_macro]
-pub fn container_iter_map(input: TokenStream) -> TokenStream {
-    container_iter_map::container_iter_map(input)
+pub fn container_iter(input: TokenStream) -> TokenStream {
+    container_iter::container_iter(input)
 }
 
 #[proc_macro]
-pub fn container_iter_map_debug(input: TokenStream) -> TokenStream {
-    let tokens = container_iter_map::container_iter_map(input);
+pub fn container_iter_debug(input: TokenStream) -> TokenStream {
+    let tokens = container_iter::container_iter(input);
     eprintln!("{}", tokens);
     tokens
 }

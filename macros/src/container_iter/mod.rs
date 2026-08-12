@@ -4,7 +4,7 @@ use proc_macro::TokenStream;
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::quote;
 
-use crate::container_iter_map::access_type::AccessType;
+use crate::container_iter::access_type::AccessType;
 
 struct Input {
     generic_types: Vec<AccessType>,
@@ -258,7 +258,7 @@ impl quote::ToTokens for Input {
     }
 }
 
-pub fn container_iter_map(input: TokenStream) -> TokenStream {
+pub fn container_iter(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as Input);
 
     let tokens = quote! {
