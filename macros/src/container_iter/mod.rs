@@ -2,17 +2,24 @@ mod access_type;
 
 use proc_macro::TokenStream;
 use proc_macro2::{Span, TokenStream as TokenStream2};
-use quote::quote;
+use quote::{ToTokens, quote};
 
 use crate::container_iter::access_type::AccessType;
 
-struct Input {
+struct InputForIter {
     generic_types: Vec<AccessType>,
     container: syn::Expr,
     view_desc: syn::Expr,
 }
 
-impl syn::parse::Parse for Input {
+struct InputForGet {
+    generic_types: Vec<AccessType>,
+    container: syn::Expr,
+    view_desc: syn::Expr,
+    object_index: syn::Expr,
+}
+
+impl syn::parse::Parse for InputForIter {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         input.parse::<syn::Token![<]>()?;
 
@@ -43,7 +50,43 @@ impl syn::parse::Parse for Input {
     }
 }
 
-impl quote::ToTokens for Input {
+impl syn::parse::Parse for InputForGet {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        input.parse::<syn::Token![<]>()?;
+
+        let generics =
+            syn::punctuated::Punctuated::<AccessType, syn::Token![,]>::parse_separated_nonempty(
+                input,
+            )?
+            .into_iter()
+            .collect();
+
+        input.parse::<syn::Token![>]>()?;
+
+        input.parse::<syn::Token![,]>()?;
+
+        let container = input.parse::<syn::Expr>()?;
+
+        input.parse::<syn::Token![,]>()?;
+
+        let view_desc = input.parse::<syn::Expr>()?;
+
+        input.parse::<syn::Token![,]>()?;
+
+        let object_index = input.parse::<syn::Expr>()?;
+
+        input.parse::<Option<syn::Token![,]>>()?;
+
+        Ok(Self {
+            generic_types: generics,
+            container,
+            view_desc,
+            object_index,
+        })
+    }
+}
+
+impl ToTokens for InputForIter {
     // This method creates something like the following:
 
     // {
@@ -54,7 +97,7 @@ impl quote::ToTokens for Input {
     //         "number of components do not match with view descriptor",
     //     );
     //     container
-    //         .iter_object_container_view_iters(view_desc)
+    //         .iter_component_view_iters(view_desc)
     //         .map(|mut iter| {
     //             let container_0 = iter.component_container_unchecked::<component::Transform>(0);
     //             let container_1 = iter.component_container_mut_unchecked::<component::RigidBody>(1);
@@ -240,7 +283,7 @@ impl quote::ToTokens for Input {
                 );
 
                 #container
-                    .iter_object_container_view_iters(view_desc)
+                    .iter_component_view_iters(view_desc)
                     .map(|mut iter| {
                         #container_definitions
 
@@ -258,8 +301,127 @@ impl quote::ToTokens for Input {
     }
 }
 
+impl ToTokens for InputForGet {
+    fn to_tokens(&self, tokens: &mut TokenStream2) {
+        let container = &self.container;
+        let view_desc = &self.view_desc;
+        let object_index = &self.object_index;
+
+        let container_definitions: TokenStream2 = self
+            .generic_types
+            .iter()
+            .enumerate()
+            .map(|(index, generic_type)| {
+                let (generic_type, is_mutable) = match generic_type {
+                    AccessType::Immutable(ty) => (ty, false),
+                    AccessType::Mutable(ty) => (ty, true),
+                };
+                let container_varname =
+                    syn::Ident::new(&format!("container_{}", index), Span::call_site());
+                let index_literal = syn::LitInt::new(&index.to_string(), Span::call_site());
+
+                if is_mutable {
+                    quote! {
+                        let #container_varname = iter
+                            .component_container_mut_unchecked::<#generic_type>(#index_literal);
+                    }
+                } else {
+                    quote! {
+                        let #container_varname = iter
+                            .component_container_unchecked::<#generic_type>(#index_literal);
+                    }
+                }
+            })
+            .collect();
+
+        let container_len_asserts: TokenStream2 = self
+            .generic_types
+            .iter()
+            .enumerate()
+            .skip(1)
+            .map(|(index, _generic_type)| {
+                let container_varname =
+                    syn::Ident::new(&format!("container_{}", index), Span::call_site());
+                let msg_literal = format!(
+                    "component length mismatch, component indices = (0, {})",
+                    index
+                );
+
+                quote! {
+                    assert_eq!(container_0.len(), #container_varname.len(), #msg_literal);
+                }
+            })
+            .collect();
+
+        let number_of_components_literal =
+            syn::LitInt::new(&self.generic_types.len().to_string(), Span::call_site());
+
+        let component_gets: TokenStream2 = self
+            .generic_types
+            .iter()
+            .enumerate()
+            .map(|(index, generic_type)| {
+                let container_varname =
+                    syn::Ident::new(&format!("container_{}", index), Span::call_site());
+
+                match generic_type {
+                    AccessType::Immutable(_) => {
+                        quote! {
+                            #container_varname.get(component_index)?,
+                        }
+                    }
+                    AccessType::Mutable(_) => {
+                        quote! {
+                            #container_varname.get_mut(component_index)?,
+                        }
+                    }
+                }
+            })
+            .collect();
+
+        tokens.extend(quote! {
+            {
+                let view_desc = #view_desc;
+                let object_index = #object_index;
+
+                assert_eq!(
+                    view_desc.number_of_components(),
+                    #number_of_components_literal,
+                    "number of components do not match with view descriptor",
+                );
+
+                #container
+                    .get_component_view_iter_for_id(view_desc, object_index)
+                    .and_then(|mut iter| {
+                        #container_definitions
+
+                        #container_len_asserts
+
+                        let component_index = nalfecs::ComponentIndex::from(
+                            object_index.object_index_in_object_container(),
+                        );
+
+                        Some((
+                            #component_gets
+                        ))
+                    })
+            }
+        });
+    }
+}
+
 pub fn container_iter(input: TokenStream) -> TokenStream {
-    let input = syn::parse_macro_input!(input as Input);
+    let input = syn::parse_macro_input!(input as InputForIter);
+
+    let tokens = quote! {
+        #input
+    };
+
+    tokens.into()
+}
+
+pub fn container_get(input: TokenStream) -> TokenStream {
+    let input = syn::parse_macro_input!(input as InputForGet);
 
     let tokens = quote! {
         #input

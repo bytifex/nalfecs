@@ -1,5 +1,7 @@
 use crate::{GenerationalSlotMap, GenerationalSlotMapIndex, ObjectIndexInObjectContainer};
 
+/// Basically this is the same as `ObjectIndexInObjectContainer`. The underlying
+/// data should have the same value for every components in the same object.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct ComponentIndex(pub(crate) GenerationalSlotMapIndex);
 
@@ -56,5 +58,13 @@ impl<T> ComponentContainer<T> {
         self.inner
             .iter_mut()
             .map(|(index, component)| (ObjectIndexInObjectContainer(index), component))
+    }
+
+    pub fn get(&self, index: ComponentIndex) -> Option<&T> {
+        self.inner.get_ref(index.0)
+    }
+
+    pub fn get_mut(&mut self, index: ComponentIndex) -> Option<&mut T> {
+        self.inner.get_mut(index.0)
     }
 }

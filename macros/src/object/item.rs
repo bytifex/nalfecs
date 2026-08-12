@@ -75,7 +75,9 @@ impl Item {
             .collect()
     }
 
-    fn iter_for_match_cases(container_fields: &[ContainerField<'_>]) -> proc_macro2::TokenStream {
+    fn iter_views_for_match_cases(
+        container_fields: &[ContainerField<'_>],
+    ) -> proc_macro2::TokenStream {
         container_fields
             .iter()
             .enumerate()
@@ -153,7 +155,7 @@ impl Item {
         let view_descriptor_component_access_checks =
             Self::view_descriptor_component_access_checks(&container_fields);
 
-        let iter_for_match_cases = Self::iter_for_match_cases(&container_fields);
+        let iter_views_for_match_cases = Self::iter_views_for_match_cases(&container_fields);
         let semantic_duplicate_component_type_check =
             Self::semantic_duplicate_component_type_check(&container_fields);
 
@@ -194,7 +196,7 @@ impl Item {
                     Some(nalfecs::ComponentViewDescriptorForObjectContainer::new::<Self>(component_indices))
                 }
 
-                fn iter_for(
+                fn iter_views_for(
                     &self,
                     desc: &nalfecs::ComponentViewDescriptorForObjectContainer,
                 ) -> Option<nalfecs::ComponentViewIterator<'_>> {
@@ -209,7 +211,7 @@ impl Item {
                         .iter()
                         .map(|(component_container_id, access_type)| {
                             match component_container_id {
-                                #iter_for_match_cases
+                                #iter_views_for_match_cases
                                 _ => None,
                             }
                         })

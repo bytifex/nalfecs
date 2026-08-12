@@ -16,4 +16,8 @@ impl ObjectIndex {
             object_index_in_object_container,
         }
     }
+
+    pub fn object_index_in_object_container(&self) -> ObjectIndexInObjectContainer {
+        self.object_index_in_object_container
+    }
 }

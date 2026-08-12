@@ -80,7 +80,7 @@ impl<'a> ComponentViewIterator<'a> {
         object_index_in_object_container: ObjectIndexInObjectContainer,
     ) -> ObjectIndex {
         let object_container_index = self.object_container_index.expect(
-            "object container index is missing; this iterator must come from Container::iter_object_container_view_iters",
+            "object container index is missing; this iterator must come from Container::iter_component_view_iters",
         );
 
         ObjectIndex::new(object_container_index, object_index_in_object_container)

@@ -24,7 +24,7 @@ pub trait ObjectContainer: Any + AsAny + Send + Sync {
         component_accesses: &[ComponentAccess],
     ) -> Option<ComponentViewDescriptorForObjectContainer>;
 
-    fn iter_for(
+    fn iter_views_for(
         &self,
         desc: &ComponentViewDescriptorForObjectContainer,
     ) -> Option<ComponentViewIterator<'_>>;

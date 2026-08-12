@@ -51,7 +51,7 @@ impl Container {
         ComponentViewDescriptor::new(view_descriptors, component_accesses.len())
     }
 
-    pub fn iter_object_container_view_iters<'a>(
+    pub fn iter_component_view_iters<'a>(
         &'a self,
         view_desc: &ComponentViewDescriptor,
     ) -> impl Iterator<Item = ComponentViewIterator<'a>> {
@@ -61,15 +61,32 @@ impl Container {
             .filter_map(|(container_index, view_desc)| {
                 let container = self.object_containers.get_ref(container_index.0)?;
                 container
-                    .iter_for(view_desc)
+                    .iter_views_for(view_desc)
                     .map(|iter| iter.with_object_container_index(*container_index))
             })
+    }
+
+    pub fn get_component_view_iter_for_id<'a>(
+        &'a self,
+        view_desc: &ComponentViewDescriptor,
+        object_index: ObjectIndex,
+    ) -> Option<ComponentViewIterator<'a>> {
+        for (container_index, view_desc_for_container) in &view_desc.view_descriptors {
+            if *container_index == object_index.object_container_index {
+                let container = self.object_containers.get_ref(container_index.0)?;
+                return container
+                    .iter_views_for(view_desc_for_container)
+                    .map(|iter| iter.with_object_container_index(*container_index));
+            }
+        }
+
+        None
     }
 
     pub fn component_iter<'a, T: 'static>(&'a self) -> Box<dyn Iterator<Item = &'a T> + 'a> {
         let view_desc = self.view_descriptor(&[ComponentAccess::immutable::<T>()]);
         let items: Vec<&'a T> = self
-            .iter_object_container_view_iters(&view_desc)
+            .iter_component_view_iters(&view_desc)
             .flat_map(|iter| {
                 let container = iter.component_container_unchecked::<T>(0);
                 container.iter().collect::<Vec<_>>()
@@ -83,7 +100,7 @@ impl Container {
     ) -> Box<dyn Iterator<Item = &'a mut T> + 'a> {
         let view_desc = self.view_descriptor(&[ComponentAccess::mutable::<T>()]);
         let items: Vec<&'a mut T> = self
-            .iter_object_container_view_iters(&view_desc)
+            .iter_component_view_iters(&view_desc)
             .flat_map(|mut iter| {
                 let container = iter.component_container_mut_unchecked::<T>(0);
                 container.iter_mut().collect::<Vec<_>>()

@@ -65,7 +65,7 @@ fn compilation() {
     //         "number of components do not match with view descriptor",
     //     );
     //     container
-    //         .iter_object_container_view_iters(view_desc)
+    //         .iter_component_view_iters(view_desc)
     //         .map(|mut iter| {
     //             let container_0 = iter.component_container_unchecked::<component::Transform>(0);
     //             let container_1 = iter.component_container_mut_unchecked::<component::RigidBody>(1);
@@ -148,6 +148,55 @@ fn add_remove_through_container() {
     assert_eq!(removed.appearance.0, "appearance_0");
 
     assert!(container.remove::<RigidBox>(index).is_none());
+}
+
+#[test]
+fn container_get_by_object_index() {
+    #[nalfecs::object(container_name = "RigidBoxContainer")]
+    struct RigidBox {
+        label: String,
+        transform: component::Transform,
+        rigid_body: component::RigidBody,
+        appearance: component::Appearance,
+    }
+
+    let container = nalfecs::Container::new([
+        Box::new(RigidBoxContainer::new()) as Box<dyn nalfecs::ObjectContainer>
+    ]);
+
+    let object_index = container
+        .add(RigidBox {
+            label: "rigid_box_0".to_string(),
+            transform: component::Transform("transform_0".to_string()),
+            rigid_body: component::RigidBody("rigid_body_0".to_string()),
+            appearance: component::Appearance("appearance_0".to_string()),
+        })
+        .expect("expected matching archetype container");
+
+    let view_desc = container.view_descriptor(&[
+        nalfecs::ComponentAccess::immutable::<component::Transform>(),
+        nalfecs::ComponentAccess::mutable::<component::RigidBody>(),
+        nalfecs::ComponentAccess::mutable::<component::Appearance>(),
+    ]);
+
+    let (transform, rigid_body, appearance) = nalfecs::container_get!(
+        <component::Transform, mut component::RigidBody, mut component::Appearance>,
+        container,
+        &view_desc,
+        object_index,
+    )
+    .expect("expected component set for object index");
+
+    assert_eq!(transform.0, "transform_0");
+    rigid_body.0.push_str("|m1|");
+    appearance.0.push_str("|m2|");
+
+    let removed = container
+        .remove::<RigidBox>(object_index)
+        .expect("expected to remove inserted object");
+
+    assert!(removed.rigid_body.0.contains("|m1|"));
+    assert!(removed.appearance.0.contains("|m2|"));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
