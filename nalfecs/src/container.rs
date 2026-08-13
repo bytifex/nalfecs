@@ -109,6 +109,7 @@ impl Container {
         Box::new(items.into_iter())
     }
 
+    #[must_use]
     pub fn add<T>(&self, object: T) -> Option<ObjectIndex>
     where
         T: Object + 'static,
@@ -127,6 +128,7 @@ impl Container {
         ))
     }
 
+    #[must_use]
     pub fn remove<T>(&self, index: ObjectIndex) -> Option<T>
     where
         T: Object + 'static,
