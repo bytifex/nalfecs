@@ -86,6 +86,7 @@ impl<'a> ComponentViewIterator<'a> {
         ObjectIndex::new(object_container_index, object_index_in_object_container)
     }
 
+    #[track_caller]
     pub fn component_container<T: 'static>(
         &self,
         index: usize,
@@ -101,6 +102,7 @@ impl<'a> ComponentViewIterator<'a> {
             })
     }
 
+    #[track_caller]
     pub fn component_container_unchecked<T: 'static>(
         &self,
         index: usize,
@@ -114,6 +116,7 @@ impl<'a> ComponentViewIterator<'a> {
         }
     }
 
+    #[track_caller]
     pub fn component_container_mut<T: 'static>(
         &mut self,
         index: usize,
@@ -129,6 +132,7 @@ impl<'a> ComponentViewIterator<'a> {
             })
     }
 
+    #[track_caller]
     pub fn component_container_mut_unchecked<T: 'static>(
         &mut self,
         index: usize,
