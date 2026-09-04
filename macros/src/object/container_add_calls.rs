@@ -8,15 +8,11 @@ impl quote::ToTokens for ContainerAddCalls<'_> {
             tokens.extend(quote! {
                 let index = self.#container_field_ident.write().add(object.#field_ident);
 
-                if let Some(expected_index) = object_index_in_object_container {
-                    debug_assert_eq!(
-                        expected_index,
-                        index,
-                        "component indices diverged while adding object"
-                    );
-                } else {
-                    object_index_in_object_container = Some(index);
-                }
+                debug_assert_eq!(
+                    object_index_in_object_container,
+                    nalfecs::ObjectIndexInObjectContainer::from(index),
+                    "component indices diverged while adding object"
+                );
             });
         }
     }

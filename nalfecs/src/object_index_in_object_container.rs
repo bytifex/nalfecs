@@ -11,8 +11,20 @@ impl From<ComponentIndex> for ObjectIndexInObjectContainer {
     }
 }
 
+impl From<GenerationalSlotMapIndex> for ObjectIndexInObjectContainer {
+    fn from(value: GenerationalSlotMapIndex) -> Self {
+        Self(value)
+    }
+}
+
 impl From<ObjectIndexInObjectContainer> for ComponentIndex {
     fn from(value: ObjectIndexInObjectContainer) -> Self {
         Self(value.0)
+    }
+}
+
+impl From<ObjectIndexInObjectContainer> for GenerationalSlotMapIndex {
+    fn from(value: ObjectIndexInObjectContainer) -> Self {
+        value.0
     }
 }

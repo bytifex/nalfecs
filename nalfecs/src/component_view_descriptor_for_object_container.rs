@@ -21,6 +21,10 @@ impl ComponentViewDescriptorForObjectContainer {
         self.object_container_type_id
     }
 
+    pub fn number_of_components(&self) -> usize {
+        self.component_container_accesses.len()
+    }
+
     pub fn component_container_accesses(&self) -> &[(ComponentContainerId, ComponentAccessType)] {
         &self.component_container_accesses
     }

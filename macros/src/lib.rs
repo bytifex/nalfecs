@@ -80,6 +80,11 @@ pub fn container_get(input: TokenStream) -> TokenStream {
 }
 
 #[proc_macro]
+pub fn object_container_iter(input: TokenStream) -> TokenStream {
+    container_iter::object_container_iter(input)
+}
+
+#[proc_macro]
 pub fn container_get_debug(input: TokenStream) -> TokenStream {
     let tokens = container_iter::container_get(input);
     eprintln!("{}", tokens);

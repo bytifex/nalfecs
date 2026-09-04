@@ -21,6 +21,23 @@ impl GenerationalSlotMapIndex {
 
         id
     }
+
+    pub fn next_index<T>(&self, object_pool: &GenerationalSlotMap<T>) -> Option<Self> {
+        let mut next_index = self.index + 1;
+        while next_index < object_pool.objects.len() {
+            if let Some(object_wrapper) = object_pool.objects.get(next_index)
+                && object_wrapper.object.is_some()
+            {
+                return Some(GenerationalSlotMapIndex {
+                    index: next_index,
+                    version: object_wrapper.version,
+                });
+            }
+            next_index += 1;
+        }
+
+        None
+    }
 }
 
 struct ObjectWrapper<T> {
@@ -199,7 +216,7 @@ impl<T> GenerationalSlotMap<T> {
         self.number_of_items == 0
     }
 
-    pub fn find_first(&self, pred: impl Fn(&T) -> bool) -> Option<GenerationalSlotMapIndex> {
+    pub fn find_first_index(&self, pred: impl Fn(&T) -> bool) -> Option<GenerationalSlotMapIndex> {
         self.objects
             .iter()
             .position(|object_wrapper| {
@@ -209,6 +226,16 @@ impl<T> GenerationalSlotMap<T> {
                     false
                 }
             })
+            .map(|index| GenerationalSlotMapIndex {
+                index,
+                version: self.objects[index].version,
+            })
+    }
+
+    pub fn first_index(&self) -> Option<GenerationalSlotMapIndex> {
+        self.objects
+            .iter()
+            .position(|object_wrapper| object_wrapper.object.is_some())
             .map(|index| GenerationalSlotMapIndex {
                 index,
                 version: self.objects[index].version,
@@ -550,9 +577,72 @@ mod tests {
         let _index4 = slot_map.create_object("item2".to_string());
         let _index5 = slot_map.create_object("item2".to_string());
 
-        assert_eq!(slot_map.find_first(|item| item == "item0"), Some(index0));
-        assert_eq!(slot_map.find_first(|item| item == "item1"), Some(index1));
-        assert_eq!(slot_map.find_first(|item| item == "item2"), Some(index3));
-        assert_eq!(slot_map.find_first(|item| item == "item3"), None);
+        assert_eq!(
+            slot_map.find_first_index(|item| item == "item0"),
+            Some(index0)
+        );
+        assert_eq!(
+            slot_map.find_first_index(|item| item == "item1"),
+            Some(index1)
+        );
+        assert_eq!(
+            slot_map.find_first_index(|item| item == "item2"),
+            Some(index3)
+        );
+        assert_eq!(slot_map.find_first_index(|item| item == "item3"), None);
+    }
+
+    #[test]
+    fn next_index_on_empty_pool() {
+        let slot_map = GenerationalSlotMap::<String>::new();
+
+        assert_eq!(slot_map.first_index(), None);
+    }
+
+    #[test]
+    fn next_index_finds_immediate_next() {
+        let mut slot_map = GenerationalSlotMap::<String>::new();
+
+        let index0 = slot_map.create_object("item0".to_string());
+        let index1 = slot_map.create_object("item1".to_string());
+
+        let first = slot_map.first_index().unwrap();
+
+        assert_eq!(first, index0);
+        assert_eq!(first.next_index(&slot_map), Some(index1));
+        assert_eq!(index1.next_index(&slot_map), None);
+    }
+
+    #[test]
+    fn next_index_skips_released_slots() {
+        let mut slot_map = GenerationalSlotMap::<String>::new();
+
+        let _index0 = slot_map.create_object("item0".to_string());
+        let index1 = slot_map.create_object("item1".to_string());
+        let index2 = slot_map.create_object("item2".to_string());
+        let index3 = slot_map.create_object("item3".to_string());
+        let first = slot_map.first_index().unwrap();
+
+        assert_eq!(slot_map.release_object(index1), Some("item1".to_string()));
+        assert_eq!(slot_map.release_object(index2), Some("item2".to_string()));
+
+        assert_eq!(first.next_index(&slot_map), Some(index3));
+        assert_eq!(index3.next_index(&slot_map), None);
+    }
+
+    #[test]
+    fn next_index_from_stale_handle_uses_position_not_version() {
+        let mut slot_map: GenerationalSlotMap<String> = GenerationalSlotMap::<String>::new();
+
+        let index0 = slot_map.create_object("item0".to_string());
+        let index1 = slot_map.create_object("item1".to_string());
+        let index2 = slot_map.create_object("item2".to_string());
+        let first = slot_map.first_index().unwrap();
+
+        assert_eq!(slot_map.release_object(index0), Some("item0".to_string()));
+
+        // `next` advances by index position and does not validate the current handle version.
+        assert_eq!(first.next_index(&slot_map), Some(index1));
+        assert_eq!(index1.next_index(&slot_map), Some(index2));
     }
 }

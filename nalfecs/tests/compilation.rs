@@ -151,6 +151,86 @@ fn add_remove_through_container() {
 }
 
 #[test]
+fn get_object_container_by_type() {
+    #[nalfecs::object(container_name = "RigidBoxContainer")]
+    struct RigidBox {
+        transform: component::Transform,
+    }
+
+    #[nalfecs::object(container_name = "RigidSphereContainer")]
+    struct RigidSphere {
+        transform: component::Transform,
+    }
+
+    let container = nalfecs::Container::new([
+        Box::new(RigidBoxContainer::new()) as Box<dyn nalfecs::ObjectContainer>
+    ]);
+
+    assert!(container.get_object_container_for::<RigidBox>().is_some());
+    assert!(
+        container
+            .get_object_container_for::<RigidSphere>()
+            .is_none()
+    );
+}
+
+#[test]
+fn object_container_iterates_components() {
+    #[nalfecs::object(container_name = "RigidBoxContainer")]
+    struct RigidBox {
+        transform: component::Transform,
+        rigid_body: component::RigidBody,
+    }
+
+    let container = nalfecs::Container::new([
+        Box::new(RigidBoxContainer::new()) as Box<dyn nalfecs::ObjectContainer>
+    ]);
+    let first_index = container
+        .add(RigidBox {
+            transform: component::Transform("transform".to_string()),
+            rigid_body: component::RigidBody("rigid_body".to_string()),
+        })
+        .expect("expected matching object container");
+    let second_index = container
+        .add(RigidBox {
+            transform: component::Transform("second transform".to_string()),
+            rigid_body: component::RigidBody("second rigid body".to_string()),
+        })
+        .expect("expected matching object container");
+    let object_container = container
+        .get_object_container_for::<RigidBox>()
+        .expect("expected registered rigid box container");
+    let view_desc = nalfecs::ObjectContainer::view_descriptor(
+        object_container,
+        &[
+            nalfecs::ComponentAccess::immutable::<component::Transform>(),
+            nalfecs::ComponentAccess::mutable::<component::RigidBody>(),
+        ],
+    )
+    .expect("expected component view descriptor");
+
+    let transforms = nalfecs::object_container_iter!(
+        <component::Transform, mut component::RigidBody>,
+        object_container,
+        &view_desc,
+    )
+    .map(|(transform, rigid_body)| {
+        rigid_body.0.push_str("|modified|");
+        transform.0.clone()
+    })
+    .collect::<Vec<_>>();
+
+    assert_eq!(transforms, ["transform", "second transform"]);
+
+    for index in [first_index, second_index] {
+        let removed = container
+            .remove::<RigidBox>(index)
+            .expect("expected to remove inserted object");
+        assert!(removed.rigid_body.0.contains("|modified|"));
+    }
+}
+
+#[test]
 fn container_get_by_object_index() {
     #[nalfecs::object(container_name = "RigidBoxContainer")]
     struct RigidBox {

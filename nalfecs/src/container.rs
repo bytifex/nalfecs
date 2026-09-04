@@ -33,6 +33,18 @@ impl Container {
         }
     }
 
+    pub fn get_object_container_for<T>(&self) -> Option<&T::Container>
+    where
+        T: Object + 'static,
+        T::Container: ObjectContainerFor<T>,
+    {
+        let object_container_index = self
+            .object_container_indices_by_type
+            .get(&TypeId::of::<T::Container>())?;
+        let container = self.object_containers.get_ref(object_container_index.0)?;
+        container.as_any().downcast_ref()
+    }
+
     pub fn view_descriptor(
         &self,
         component_accesses: &[ComponentAccess],

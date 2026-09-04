@@ -167,7 +167,7 @@ impl Item {
         tokens.extend(quote! {
             #[derive(Default)]
             pub struct #container_name {
-                lock: nalfecs::parking_lot::Mutex<()>,
+                lock: nalfecs::parking_lot::RwLock<nalfecs::GenerationalSlotMap<()>>,
                 #container_field_definitions
             }
 
@@ -200,7 +200,7 @@ impl Item {
                     &self,
                     desc: &nalfecs::ComponentViewDescriptorForObjectContainer,
                 ) -> Option<nalfecs::ComponentViewIterator<'_>> {
-                    let _guard = self.lock.lock();
+                    let _guard = self.lock.write();
 
                     if desc.object_container_type_id() != ::std::any::TypeId::of::<Self>() {
                         return None;
@@ -235,23 +235,24 @@ impl Item {
                 }
 
                 pub fn add(&self, object: #item_name) -> nalfecs::ObjectIndexInObjectContainer {
-                    let _guard = self.lock.lock();
-                    let mut object_index_in_object_container = None;
+                    let mut object_indices = self.lock.write();
+                    let object_index_in_object_container =
+                        nalfecs::ObjectIndexInObjectContainer::from(object_indices.create_object(()));
 
                     #container_add_calls
 
-                    object_index_in_object_container
-                        .expect("object structs with named fields always have at least one field")
-                        .into()
+                    object_index_in_object_container.into()
                 }
 
                 pub fn remove(
                     &self,
                     index: nalfecs::ObjectIndexInObjectContainer,
                 ) -> Option<#item_name> {
-                    let _guard = self.lock.lock();
+                    let mut object_indices = self.lock.write();
 
                     #container_remove_calls
+
+                    object_indices.release_object(index.into())?;
 
                     Some(#item_name {
                         #object_builder_fields
